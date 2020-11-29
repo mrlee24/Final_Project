@@ -11,6 +11,9 @@
 #include "Kismet/GameplayStatics.h"
 #include "MotionControllerComponent.h"
 #include "XRMotionControllerBase.h" // for FXRMotionControllerBase::RightHandSourceId
+#include "GameFramework/CharacterMovementComponent.h" 
+#include "TimerManager.h"
+#include "Engine/World.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFPChar, Warning, All);
 
@@ -51,7 +54,7 @@ AFinal_ProjectCharacter::AFinal_ProjectCharacter()
 
 	FP_MuzzleLocation = CreateDefaultSubobject<USceneComponent>(TEXT("MuzzleLocation"));
 	FP_MuzzleLocation->SetupAttachment(FP_Gun);
-	FP_MuzzleLocation->SetRelativeLocation(FVector(0.2f, 48.4f, -10.6f));
+	FP_MuzzleLocation->SetRelativeLocation(FVector(50.f, 50.f, 25.0f));
 
 	// Default offset from the character location for projectiles to spawn
 	GunOffset = FVector(100.0f, 0.0f, 10.0f);
@@ -104,7 +107,6 @@ void AFinal_ProjectCharacter::BeginPlay()
 		Mesh1P->SetHiddenInGame(false, true);
 	}
 }
-
 //////////////////////////////////////////////////////////////////////////
 // Input
 
@@ -119,6 +121,12 @@ void AFinal_ProjectCharacter::SetupPlayerInputComponent(class UInputComponent* P
 
 	// Bind fire event
 	PlayerInputComponent->BindAction("Fire", IE_Pressed, this, &AFinal_ProjectCharacter::OnFire);
+
+	// Bind fire event
+	PlayerInputComponent->BindAction("Reload", IE_Pressed, this, &AFinal_ProjectCharacter::Reload);
+
+	// Bind dash event
+	PlayerInputComponent->BindAction("Dash", IE_Pressed, this, &AFinal_ProjectCharacter::Dash);
 
 	// Enable touchscreen input
 	EnableTouchscreenMovement(PlayerInputComponent);
@@ -138,21 +146,62 @@ void AFinal_ProjectCharacter::SetupPlayerInputComponent(class UInputComponent* P
 	PlayerInputComponent->BindAxis("LookUpRate", this, &AFinal_ProjectCharacter::LookUpAtRate);
 }
 
+void AFinal_ProjectCharacter::CalculateAmmoWhenReload() 
+{
+	int AmmoNeededForReload = AmmoClipSize - CurrentAmmo;
+
+	if (CurrentMaxAmmo <= AmmoNeededForReload)
+	{
+		CurrentAmmo += CurrentMaxAmmo;
+		CurrentMaxAmmo = 0;
+	}
+	else
+	{
+		CurrentMaxAmmo -= AmmoNeededForReload;
+		CurrentAmmo = AmmoClipSize;
+	}
+}
+
+void AFinal_ProjectCharacter::SetCanShootByTimerToTrue() 
+{ 
+	CanShoot = true;
+	
+	CalculateAmmoWhenReload();
+}
+
+void AFinal_ProjectCharacter::Reload() 
+{
+	if (CurrentAmmo != AmmoClipSize)
+	{
+		CanShoot = false;
+		GetWorldTimerManager().SetTimer(ReloadingTimer, this, &AFinal_ProjectCharacter::SetCanShootByTimerToTrue, ReloadingTime);
+	}
+}
+
+void AFinal_ProjectCharacter::SetCurrentMaxAmmo(int Val) { CurrentMaxAmmo += Val; }
+
+
+float AFinal_ProjectCharacter::GetCurrentMaxAmmo() 
+{
+	return CurrentMaxAmmo;
+}
+
+float AFinal_ProjectCharacter::GetCurrentAmmo() 
+{
+	return CurrentAmmo;
+}
+
 void AFinal_ProjectCharacter::OnFire()
 {
-	// try and fire a projectile
-	if (ProjectileClass != NULL)
+	if (CurrentAmmo == 0) return;
+
+	if (CanShoot)
 	{
-		UWorld* const World = GetWorld();
-		if (World != NULL)
+		// try and fire a projectile
+		if (ProjectileClass != NULL)
 		{
-			if (bUsingMotionControllers)
-			{
-				const FRotator SpawnRotation = VR_MuzzleLocation->GetComponentRotation();
-				const FVector SpawnLocation = VR_MuzzleLocation->GetComponentLocation();
-				World->SpawnActor<AFinal_ProjectProjectile>(ProjectileClass, SpawnLocation, SpawnRotation);
-			}
-			else
+			UWorld* const World = GetWorld();
+			if (World != NULL)
 			{
 				const FRotator SpawnRotation = GetControlRotation();
 				// MuzzleOffset is in camera space, so transform it to world space before offsetting from the character location to find the final muzzle position
@@ -162,26 +211,28 @@ void AFinal_ProjectCharacter::OnFire()
 				FActorSpawnParameters ActorSpawnParams;
 				ActorSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
 
+				CurrentAmmo--;
+
 				// spawn the projectile at the muzzle
 				World->SpawnActor<AFinal_ProjectProjectile>(ProjectileClass, SpawnLocation, SpawnRotation, ActorSpawnParams);
 			}
 		}
-	}
 
-	// try and play the sound if specified
-	if (FireSound != NULL)
-	{
-		UGameplayStatics::PlaySoundAtLocation(this, FireSound, GetActorLocation());
-	}
-
-	// try and play a firing animation if specified
-	if (FireAnimation != NULL)
-	{
-		// Get the animation object for the arms mesh
-		UAnimInstance* AnimInstance = Mesh1P->GetAnimInstance();
-		if (AnimInstance != NULL)
+		// try and play the sound if specified
+		if (FireSound != NULL)
 		{
-			AnimInstance->Montage_Play(FireAnimation, 1.f);
+			UGameplayStatics::PlaySoundAtLocation(this, FireSound, GetActorLocation());
+		}
+
+		// try and play a firing animation if specified
+		if (FireAnimation != NULL)
+		{
+			// Get the animation object for the arms mesh
+			UAnimInstance* AnimInstance = Mesh1P->GetAnimInstance();
+			if (AnimInstance != NULL)
+			{
+				AnimInstance->Montage_Play(FireAnimation, 1.f);
+			}
 		}
 	}
 }
@@ -272,6 +323,43 @@ void AFinal_ProjectCharacter::MoveRight(float Value)
 	}
 }
 
+void AFinal_ProjectCharacter::SetDashCoolDown()  { CanDash = true; }
+
+
+float AFinal_ProjectCharacter::GetDashCoolDown() 
+{
+	return DashCoolDown - GetWorldTimerManager().GetTimerElapsed(DashCDTimer);
+}
+
+void AFinal_ProjectCharacter::Dash() 
+{
+	if (!CanDash) UE_LOG(LogTemp, Warning, TEXT("Is Cooling Down"));
+
+	if (CanDash)
+	{
+		ApplyDashEffect();
+		GetWorldTimerManager().SetTimer(DashDurationTimer, this, &AFinal_ProjectCharacter::RemoveDashEffect, DashDuration);	
+	}
+}
+
+void AFinal_ProjectCharacter::ApplyDashEffect() 
+{
+	GetCharacterMovement()->MaxWalkSpeed = 2500.f;
+	GetCharacterMovement()->MaxAcceleration = 10000.f;
+	GetCharacterMovement()->AirControl = 1.f;
+}
+
+void AFinal_ProjectCharacter::RemoveDashEffect() 
+{
+	CanDash = false;
+	UE_LOG(LogTemp, Warning, TEXT("RemovedDashEffect"));
+	GetCharacterMovement()->MaxWalkSpeed = 600.f;
+	GetCharacterMovement()->MaxAcceleration = 2048.f;
+	GetCharacterMovement()->AirControl = 0.05f;
+	
+	GetWorldTimerManager().SetTimer(DashCDTimer, this, &AFinal_ProjectCharacter::SetDashCoolDown, DashCoolDown);
+}
+
 void AFinal_ProjectCharacter::TurnAtRate(float Rate)
 {
 	// calculate delta for this frame from the rate information
@@ -298,3 +386,4 @@ bool AFinal_ProjectCharacter::EnableTouchscreenMovement(class UInputComponent* P
 	
 	return false;
 }
+

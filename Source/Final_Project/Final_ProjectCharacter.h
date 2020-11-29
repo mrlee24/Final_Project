@@ -33,6 +33,34 @@ class AFinal_ProjectCharacter : public ACharacter
 	UPROPERTY(VisibleDefaultsOnly, Category = Mesh)
 	class USceneComponent* VR_MuzzleLocation;
 
+	UPROPERTY(VisibleDefaultsOnly, Category = Dash)
+	float DashCoolDown = 2.f;
+
+	UPROPERTY(VisibleDefaultsOnly, Category = Dash)
+	float DashDuration = 0.2f;
+
+	UPROPERTY(VisibleDefaultsOnly, Category = Dash)
+	bool CanDash = true;
+
+	UPROPERTY(VisibleAnywhere, Category = Ammo)
+	int CurrentMaxAmmo = 24;
+
+	UPROPERTY(VisibleAnywhere, Category = Ammo)
+	int CurrentAmmo = 12;
+
+	UPROPERTY(VisibleAnywhere, Category = Ammo)
+	int AmmoClipSize = 12;
+
+	UPROPERTY(VisibleAnywhere, Category = Ammo)
+	float ReloadingTime = 1.5f;
+
+	UPROPERTY(VisibleAnywhere, Category = Ammo)
+	bool CanShoot = true;
+
+	FTimerHandle DashCDTimer;
+	FTimerHandle DashDurationTimer;
+	FTimerHandle ReloadingTimer;
+
 	/** First person camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
 	class UCameraComponent* FirstPersonCameraComponent;
@@ -45,6 +73,7 @@ class AFinal_ProjectCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	class UMotionControllerComponent* L_MotionController;
 
+	void CalculateAmmoWhenReload();
 public:
 	AFinal_ProjectCharacter();
 
@@ -80,6 +109,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Gameplay)
 	uint32 bUsingMotionControllers : 1;
 
+	void SetDashCoolDown();
+
+	void SetCanShootByTimerToTrue();
+
+	void SetCurrentMaxAmmo(int Val);
+
+	UFUNCTION(BlueprintPure)
+	float GetDashCoolDown();
+
+	UFUNCTION(BlueprintPure)
+	float GetCurrentMaxAmmo();
+
+	UFUNCTION(BlueprintPure)
+	float GetCurrentAmmo();
+
 protected:
 	
 	/** Fires a projectile. */
@@ -93,6 +137,14 @@ protected:
 
 	/** Handles stafing movement, left and right */
 	void MoveRight(float Val);
+
+	void Reload();
+
+	void Dash();
+
+	void ApplyDashEffect();
+
+	void RemoveDashEffect();
 
 	/**
 	 * Called via input to turn at a given rate.

@@ -19,6 +19,12 @@ class AFinal_ProjectProjectile : public AActor
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Movement, meta = (AllowPrivateAccess = "true"))
 	class UProjectileMovementComponent* ProjectileMovement;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Damage")
+	TSubclassOf<UDamageType> DamageType;
+
+	UPROPERTY(EditAnywhere, Category = "Effects")
+	class UParticleSystem* HitParticle;
+
 public:
 	AFinal_ProjectProjectile();
 
